@@ -1,0 +1,24 @@
+{
+  "name": "waypoint-challenge",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "scenario:1": "tsx scripts/run_scenario.ts 1",
+    "scenario:2": "tsx scripts/run_scenario.ts 2"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.95.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.8.0",
+    "vitest": "^2.0.0"
+  }
+}
