@@ -8,7 +8,10 @@
     "dev": "tsx src/index.ts",
     "test": "vitest run",
     "scenario:1": "tsx scripts/run_scenario.ts 1",
-    "scenario:2": "tsx scripts/run_scenario.ts 2"
+    "scenario:2": "tsx scripts/run_scenario.ts 2",
+    "ingest:iep": "tsx scripts/run_ingest.ts iep",
+    "ingest:lesson": "tsx scripts/run_ingest.ts lesson",
+    "run:all": "tsx scripts/run_all.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",

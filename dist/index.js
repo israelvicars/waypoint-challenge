@@ -6,6 +6,8 @@ import { getIepGoal } from './tools/get_iep_goal.js';
 import { getAccommodations } from './tools/get_accommodations.js';
 import { getLesson } from './tools/get_lesson.js';
 import { generateModifications } from './tools/generate_modifications.js';
+import { ingestIep } from './tools/ingest_iep.js';
+import { ingestLesson } from './tools/ingest_lesson.js';
 import { registerIepResources } from './resources/iep_resource.js';
 import { registerLessonResources } from './resources/lesson_resource.js';
 const server = new McpServer({
@@ -58,6 +60,34 @@ server.tool('generate_modifications', 'Generates a complete IEP-grounded modific
     try {
         const guide = await generateModifications(lesson_id, student_ids);
         return { content: [{ type: 'text', text: guide }] };
+    }
+    catch (err) {
+        return { content: [{ type: 'text', text: String(err) }], isError: true };
+    }
+});
+server.tool('ingest_iep', 'Ingests an IEP PDF, extracts structured markdown using claude-opus-4-7, and writes it to data/ieps/. ' +
+    'The output includes all IEP sections plus a Key Profile Summary (MCP Reference) at the end — the primary context unit for generate_modifications. ' +
+    'pdf_path must be absolute (Claude Desktop launches with an arbitrary working directory).', {
+    pdf_path: z.string().describe('Absolute path to the IEP PDF file, e.g. "/Users/you/waypoint-challenge/assets/iep.pdf"'),
+    student_id: z.string().describe('Student ID that determines the output filename, e.g. "jasmine-bailey" → data/ieps/jasmine_bailey_iep.md'),
+}, async ({ pdf_path, student_id }) => {
+    try {
+        const result = await ingestIep(pdf_path, student_id);
+        return { content: [{ type: 'text', text: result }] };
+    }
+    catch (err) {
+        return { content: [{ type: 'text', text: String(err) }], isError: true };
+    }
+});
+server.tool('ingest_lesson', 'Ingests a lesson plan PDF, extracts structured markdown using claude-opus-4-7, and writes it to data/lessons/. ' +
+    'Verbatim question text is preserved with normalized IDs (DRQ-1A, MC-3, SR-1, DISC-2). ' +
+    'pdf_path must be absolute (Claude Desktop launches with an arbitrary working directory).', {
+    pdf_path: z.string().describe('Absolute path to the lesson PDF file, e.g. "/Users/you/waypoint-challenge/assets/lesson.pdf"'),
+    lesson_id: z.string().describe('Lesson ID that determines the output filename, e.g. "what-is-community" → data/lessons/what_is_community_lesson.md'),
+}, async ({ pdf_path, lesson_id }) => {
+    try {
+        const result = await ingestLesson(pdf_path, lesson_id);
+        return { content: [{ type: 'text', text: result }] };
     }
     catch (err) {
         return { content: [{ type: 'text', text: String(err) }], isError: true };

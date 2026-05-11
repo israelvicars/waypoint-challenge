@@ -1,5 +1,78 @@
 # Waypoint Learning — MCP Server Submission
 
+Waypoint closes the gap between what an IEP says and what a teacher can actually do with it tomorrow. The central insight driving the architecture is that the translation problem isn't an AI problem — it's a context problem: the right information, structured for reasoning, handed to the model at the right moment. The approach taken here pre-processes both the IEP and the lesson at ingestion time, extracting a Key Profile Summary that distills a 20+ page legal document into ~300 words of teacher-relevant signal, and preserving every lesson question verbatim so the model can generate scaffolds for the *actual* prompts a student will encounter — not generic strategies. The output is a modification guide organized by lesson activity, tagged to specific IEP goals and accommodations, with copy-paste-ready materials. A teacher with two IEP students in one period can generate a complete, classroom-ready guide in a single tool call.
+
+---
+
+## Supporting Documents
+
+**[`waypoint_ux.md`](./waypoint_ux.md) — User Story Map**
+Defines the teacher persona (Maya Torres, 7th grade ELA, 15–18 IEP students across five periods), the preparation journey, and the three design principles that constrain every architectural decision: organize around the lesson not the IEP, ready to use not ready to interpret, one operation covers the whole day. Start here to understand what the system is for and who it serves.
+
+**[`waypoint_prd.md`](./waypoint_prd.md) — Product Requirements Document**
+Covers the four system components (ingestion pipeline, data layer, MCP server, modification guide generator), the full functional and non-functional requirements, and the explicit v0.1 / v1 scope boundary. The PRD reflects the product as specified before implementation and documents the open questions resolved during the build. Read this to understand what was required, what was deferred, and why.
+
+**[`waypoint_mvp_spec.md`](./waypoint_mvp_spec.md) — Technical Architecture & Implementation**
+The implementation-level reference: tech stack, ingestion pipeline stages and extraction schemas, tool and resource definitions, IEP chunking strategy, and the full prompt design for `generate_modifications`. Includes the complete system prompt and user message format. This is the companion document to the code — read it alongside `src/tools/generate_modifications.ts`.
+
+**[`waypoint_ingest.md`](./waypoint_ingest.md) — Ingestion Pipeline Deep Dive**
+Explains the problem ingestion solves (why re-parsing at generation time doesn't scale), the four-tier chunking strategy, the design decision behind the Key Profile Summary, and the verbatim preservation contract for lesson questions. This document makes the case for why pre-processing is the pivotal architectural choice — not a convenience but a correctness requirement at classroom scale.
+
+---
+
+## Approach Overview
+
+### I. The Problem Worth Solving
+- ~10M U.S. students have IEPs — legally binding, 20+ page documents teachers are required to act on daily
+- The bottleneck isn't knowing what a student needs; it's the translation gap between an IEP and *tomorrow's specific lesson*
+- A teacher with 15–18 IEP students across five periods faces this gap every single day, with a 40-minute prep window
+- The output that doesn't exist: a modification guide grounded in both documents, specific enough to use without editing
+
+### II. Design Before Architecture
+- Started with the teacher persona and the real constraint: she's not looking to learn about IEPs — she needs the intersection work done for her
+- Three design principles that drove every technical decision:
+  - Organize around the lesson, not the IEP
+  - Ready to use, not ready to interpret
+  - One operation covers the whole day (batch by default)
+- Output format flip: single student → student-organized; multiple students → activity-organized with synthesis layer
+
+### III. The Core Architecture Problem
+- Naïve approach (pass full IEP + full lesson to Claude on every request) fails at classroom scale: slow, expensive, noisy context, and collapses when 15 students × 30 pages each hit the context window
+- Two structural solutions:
+  - **Four-tier IEP chunking** — pre-slice the IEP at ingestion time; Tier 1 (Key Profile Summary, ~300 words) is always loaded; Tiers 2–4 retrieved on demand
+  - **Verbatim lesson preservation** — every question stem copied exactly and labeled by ID (DRQ-1A, MC-3, etc.); these IDs become the contract between the lesson document and every modification the system generates
+
+### IV. The Ingestion Pipeline (Stretch Goal — Feature Branch)
+- Separates ingestion from generation: each document processed once, stored as structured markdown, never re-parsed at generation time
+- IEPs: LLM extraction pass produces standard section schema + a **Key Profile Summary generated at ingestion** (the synthesis is paid once, not on every teacher request)
+- Lessons: verbatim preservation of all question text is a hard requirement, not a preference — enforced in the extraction prompt, verified by checking for question IDs in output
+- Pre-processed files for both IEPs and the lesson are committed and ready to use without re-ingestion
+
+### V. The MCP Server
+- Five tools exposed:
+  - `generate_modifications` — core tool; accepts lesson ID + array of student IDs; returns full modification guide
+  - `get_student_profile` / `get_iep_goal` / `get_accommodations` — tiered IEP retrieval (Tiers 1–3)
+  - `get_lesson` — full lesson retrieval
+  - `ingest_iep` / `ingest_lesson` — PDF → structured markdown (stretch goal, feature branch)
+- IEP data also exposed as typed MCP resources (`iep://{student_id}/summary`, `goals/{n}`, etc.)
+- Core logic lives in `src/utils/` and `src/tools/` as pure functions — the MCP layer is a thin wrapper, not the service itself; a REST layer can consume the same functions directly
+
+### VI. Prompt Design
+- System prompt establishes the role (special education instructional coach) and three hard requirements: every modification traced to a specific IEP source with citation tags; every modification references actual lesson content by question ID; all ready-to-use materials derived from verbatim lesson questions
+- Output structure enforced: before-class checklist → per-activity sections in lesson order → synthesis (multi-student only)
+
+### VII. Demo Scenarios
+- **Scenario 1** — Single student: Jasmine Bailey × What is Community → student-organized guide with before-class checklist, four activity sections, IEP goal tags on every recommendation
+- **Scenario 2** — Multi-student: Jasmine Bailey + Marcus Chen × same lesson → activity-organized guide with per-student modifications at each activity + synthesis section (overlapping needs, divergent needs, interaction effects)
+- Additional tool demonstrations: profile lookup, goal retrieval, accommodation list, live PDF ingestion
+
+### VIII. What's Deferred and Why
+- `get_period_roster` + `roster.json` (v1) — enables true batch generation across a full day's periods; student IDs passed directly for MVP
+- REST wrapper + web UI (v1) — MCP tool signatures defined here *are* the API contract; a web client is one additional layer
+- Progress reporting + outcome logging (v1+) — IEP goal tags on every recommendation are already the data foundation; reporting is a layer on top
+
+---
+
 ## What This Is
 
 Almost 10 million U.S. students have IEPs — legally binding documents that tell teachers exactly what each student needs. But translating a 20+ page IEP into tomorrow's specific lesson plan takes hours of prep that most teachers don't have. A teacher with 15 IEP students across five periods faces this translation gap every single day.
@@ -57,6 +130,11 @@ npm run scenario:2   # Jasmine Bailey + Marcus Chen
 
 Add `WRITE_EXAMPLES=1` to write output to `examples/`.
 
+```bash
+npm run ingest:iep      # ingest assets/iep.pdf → data/ieps/jasmine_bailey_iep.md
+npm run ingest:lesson   # ingest assets/lesson.pdf → data/lessons/what_is_community_lesson.md
+```
+
 ### Tests
 
 ```bash
@@ -89,6 +167,15 @@ Expected tool call: `generate_modifications({ lesson_id: "what-is-community", st
 
 > "Show me the lesson plan for What is Community."  
 > → `get_lesson({ lesson_id: "what-is-community" })`
+
+**Scenario 3 — PDF ingestion:**
+> "Ingest the IEP at /absolute/path/to/waypoint-challenge/assets/iep.pdf for student jasmine-bailey."  
+> → `ingest_iep({ pdf_path: "/absolute/path/...", student_id: "jasmine-bailey" })`
+
+> "Ingest the lesson at /absolute/path/to/waypoint-challenge/assets/lesson.pdf as what-is-community."  
+> → `ingest_lesson({ pdf_path: "/absolute/path/...", lesson_id: "what-is-community" })`
+
+Note: `pdf_path` must be an **absolute path**. Claude Desktop launches with an arbitrary working directory, so relative paths silently fail.
 
 ---
 
@@ -150,9 +237,21 @@ See the `examples/` directory for committed Opus-generated outputs:
 
 ---
 
-## What's Out of Scope (v0.1)
+## Re-ingesting Source Data
 
-- **Automated PDF ingestion** — IEP and lesson files are pre-processed into structured markdown. A v1 pipeline using `pdf-parse` → LLM extraction pass handles this automatically.
+The `ingest_iep` and `ingest_lesson` tools convert source PDFs to structured markdown using `claude-opus-4-7` natively — no `pdf-parse` stage needed. The model receives the PDF directly (text + visual layout) and extracts the structured markdown in a single API call.
+
+```
+ingest_iep({ pdf_path: "/abs/path/iep.pdf", student_id: "jasmine-bailey" })
+  → writes data/ieps/jasmine_bailey_iep.md
+  → generate_modifications reads from the same path automatically
+```
+
+The hand-curated originals are archived in `examples/originals/` as a baseline for quality comparison.
+
+---
+
+## What's Out of Scope (v0.1)
 - **`get_period_roster` tool and `roster.json`** — deferred to v1. For MVP, student IDs are passed directly to `generate_modifications`. A v1 roster tool resolves them from a period ID.
 - **Web UI and REST layer** — the MCP server defines the API contract. A v1 REST wrapper wraps the same tool functions as HTTP endpoints for consumption by a web interface.
 - **Teacher authentication, multi-user access** — single-user local service for MVP.
