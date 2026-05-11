@@ -42,13 +42,11 @@ export function extractKeyProfileSummary(markdown: string): string {
 }
 
 // Tier 2 — Individual goal record
-// Real files use em-dash (U+2014): "### Goal N — [Area]"
+// Hand-curated files use ### (level 3); ingested files may produce ## (level 2). Try both.
 export function extractGoal(markdown: string, goalNumber: number): string {
-  return extractSection(
-    markdown,
-    (line) => /^### Goal \d+\s*[—-]/.test(line) && line.includes(`Goal ${goalNumber}`),
-    3
-  );
+  const matcher = (line: string) =>
+    /^#{2,3}\s+Goal \d+\s*[—-]/.test(line) && line.includes(`Goal ${goalNumber}`);
+  return extractSection(markdown, matcher, 3) || extractSection(markdown, matcher, 2);
 }
 
 // Tier 3 — Flat accommodation list

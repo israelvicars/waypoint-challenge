@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A TypeScript MCP server that helps teachers generate IEP-grounded lesson modification guides. Submission for the Waypoint Learning contest — deadline **Monday, May 11 @ 12pm ET**. Submit to isaac@waypoint-learning.org with a public GitHub repo link.
 
-The implementation is complete and all tests pass. Reference docs (do not modify): `waypoint_mvp_spec.md`, `waypoint_prd.md`, `waypoint_ux.md`.
+The implementation is complete (7 tools) and all tests pass. Reference docs (do not modify): `waypoint_mvp_spec.md`, `waypoint_prd.md`, `waypoint_ux.md`.
 
 ## Commands
 
@@ -17,6 +17,9 @@ ANTHROPIC_MODEL=claude-haiku-4-5-20251001 npm test  # includes smoke tests
 npm run scenario:1                                   # CLI: Jasmine Bailey only
 npm run scenario:2                                   # CLI: Jasmine Bailey + Marcus Chen
 WRITE_EXAMPLES=1 npm run scenario:1                  # write output to examples/
+npm run ingest:iep                                   # ingest assets/iep.pdf → data/ieps/jasmine_bailey_iep.md
+npm run ingest:lesson                                # ingest assets/lesson.pdf → data/lessons/what_is_community_lesson.md
+npm run run:all                                      # end-to-end: ingest → read tools → generate → examples/run_all_report.md
 ```
 
 Model is configurable via `ANTHROPIC_MODEL` env var (default: `claude-opus-4-7`). Use `claude-haiku-4-5-20251001` for dev to keep costs low.
@@ -62,9 +65,13 @@ IEPs are pre-chunked into four tiers. `generate_modifications` loads Tier 1 + th
 - Goal headers use U+2014 em-dash: `### Goal N — [Area]` — regex uses `[—-]` to handle both
 - Marcus's IEP structure differs from Jasmine's — parser uses header-walk, not structural assumptions
 
+### PDF ingestion tools
+
+`ingest_iep` and `ingest_lesson` accept a PDF path + ID, call `claude-opus-4-7` with the document natively (no pdf-parse stage), and write structured markdown to `data/`. The `pdf_path` must be absolute — Claude Desktop launches with arbitrary cwd. ID format: `jasmine-bailey` → `jasmine_bailey_iep.md` (hyphens → underscores + suffix). Hand-curated originals are archived in `examples/originals/`.
+
 ### Path resolution
 
-`file_reader.ts` resolves `data/` via `import.meta.url` (not `process.cwd()`). Claude Desktop launches with arbitrary cwd; `process.cwd()` silently fails. Supports `WAYPOINT_DATA_DIR` env override.
+Both `file_reader.ts` and `pdf_ingest.ts` resolve `data/` via `import.meta.url` (not `process.cwd()`). Claude Desktop launches with arbitrary cwd; `process.cwd()` silently fails. Supports `WAYPOINT_DATA_DIR` env override.
 
 ### Student/Lesson ID mapping
 
